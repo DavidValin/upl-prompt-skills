@@ -32,8 +32,10 @@ UPL prompts are `.txt` or `.upl` files containing typed parameters, conditionals
    - The UPL CLI supports building a prompt directly from a file path.
 
 5. **Prompt metadata matters.**
-   - UPL prompts have a metadata field named `description`.
-   - When listing or choosing prompts, inspect the prompt metadata and use its `name` and `description` to determine what the prompt does.
+   - UPL prompts have a metadata field named `desc` (not `description`), alongside `name`, the optional `title`, and the optional `source` provenance field.
+   - `title`, `desc`, and `source` are stored verbatim: quotes are not stripped, so a quoted value includes its quote characters. Strip them when displaying if present.
+   - `params` is always the last metadata field, so `desc` appears before it.
+   - When listing or choosing prompts, inspect the prompt metadata and use its `name` and `desc` to determine what the prompt does.
    - Do not rely solely on filenames.
    - If metadata cannot be parsed safely, show the filename/path and state that metadata was unavailable.
 
@@ -54,6 +56,7 @@ UPL prompts are `.txt` or `.upl` files containing typed parameters, conditionals
      - `option_single` → one allowed value
      - `option_multi` → JSON array containing allowed values
    - `null` means use the parameter's declared default.
+   - Do not supply a value for a parameter that is hidden by its `exclude_condition` (§8 below); doing so is a build error.
 
 8. **Do not modify the user's UPL prompt unless explicitly asked.**
    - Create temporary JSON input files separately.
@@ -84,7 +87,7 @@ If it is not available, install the appropriate release artifact before continui
 
 ## Installing the CLI
 
-The provided release is:
+The latest published release is:
 
     0.1.1-rc.2
 
@@ -92,27 +95,32 @@ Repository:
 
     DavidValin/universal-prompt-language
 
-Available release artifacts:
+Available release artifacts — these six are the ONLY assets published for this
+release. Do not construct any other asset name or URL; in particular there are
+no `_musl` builds:
 
     upl-aarch64_linux.tar.gz
-    upl-aarch64_linux_musl.tar.gz
     upl-aarch64_macos.tar.gz
     upl-aarch64_windows.zip
     upl-x86_64_linux.tar.gz
-    upl-x86_64_linux_musl.tar.gz
     upl-x86_64_macos-intel.tar.gz
     upl-x86_64_windows.zip
+
+Version note: `0.1.1-rc.2` predates several UPL 1.0-rc.4 spec features (the
+`and`/`or`/`not` combinators, the `\{{{`/`\[[[` delimiter escapes, dotted-path
+`for` sources). A prompt using them will fail to build on this binary. If a
+prompt that looks valid is rejected for one of those constructs, report the
+version mismatch rather than rewriting the user's prompt; a newer binary can be
+built from source (§18).
 
 ### Release URLs
 
 Use the exact artifact corresponding to the current operating system and architecture.
 
     https://github.com/DavidValin/universal-prompt-language/releases/download/0.1.1-rc.2/upl-aarch64_linux.tar.gz
-    https://github.com/DavidValin/universal-prompt-language/releases/download/0.1.1-rc.2/upl-aarch64_linux_musl.tar.gz
     https://github.com/DavidValin/universal-prompt-language/releases/download/0.1.1-rc.2/upl-aarch64_macos.tar.gz
     https://github.com/DavidValin/universal-prompt-language/releases/download/0.1.1-rc.2/upl-aarch64_windows.zip
     https://github.com/DavidValin/universal-prompt-language/releases/download/0.1.1-rc.2/upl-x86_64_linux.tar.gz
-    https://github.com/DavidValin/universal-prompt-language/releases/download/0.1.1-rc.2/upl-x86_64_linux_musl.tar.gz
     https://github.com/DavidValin/universal-prompt-language/releases/download/0.1.1-rc.2/upl-x86_64_macos-intel.tar.gz
     https://github.com/DavidValin/universal-prompt-language/releases/download/0.1.1-rc.2/upl-x86_64_windows.zip
 
@@ -149,9 +157,7 @@ Then verify:
 Use the operating system and architecture to select the artifact:
 
     Linux ARM64 / AArch64       → upl-aarch64_linux.tar.gz
-    Linux ARM64 / AArch64 musl  → upl-aarch64_linux_musl.tar.gz
     Linux x86_64                → upl-x86_64_linux.tar.gz
-    Linux x86_64 musl           → upl-x86_64_linux_musl.tar.gz
     macOS Apple Silicon         → upl-aarch64_macos.tar.gz
     macOS Intel                 → upl-x86_64_macos-intel.tar.gz
     Windows ARM64               → upl-aarch64_windows.zip
@@ -174,7 +180,7 @@ On macOS:
 
 On Windows, determine whether the system is ARM64 or x86_64 and select the corresponding ZIP.
 
-For Linux, prefer the normal Linux artifact on glibc-based distributions and the `_musl` artifact on musl-based distributions such as Alpine.
+There is a single Linux artifact per architecture; the published release has no musl-specific build. On a musl-based distribution such as Alpine the glibc binary may not run — build from source (§18) rather than looking for a `_musl` asset that does not exist.
 
 ### If `gh` is unavailable
 
@@ -249,7 +255,7 @@ When the user asks for a prompt but has not identified an exact file:
 1. Determine the search root.
 2. Recursively find `.txt` and `.upl` files.
 3. Inspect the prompts' metadata.
-4. Use `name` and `description` to identify relevant prompts.
+4. Use `name` and `desc` to identify relevant prompts.
 5. Present a concise list when multiple plausible matches exist.
 6. If one prompt clearly matches the request, select it.
 7. If several prompts are equally plausible and choosing incorrectly could materially change the result, ask the user to choose.
@@ -261,14 +267,14 @@ Example:
     Available prompts:
 
     1. create_rest_api
-       Description: Create an implementation plan for a REST API.
+       Desc: Create an implementation plan for a REST API.
        Path: ~/.upl/prompts/software/api/create_rest_api.txt
 
     2. review_article
-       Description: Review an article for structure, clarity, and correctness.
+       Desc: Review an article for structure, clarity, and correctness.
        Path: ~/.upl/prompts/writing/review_article.upl
 
-Do not use filename similarity alone when the `description` gives better information about the prompt's purpose.
+Do not use filename similarity alone when the `desc` gives better information about the prompt's purpose.
 
 ---
 
@@ -279,7 +285,7 @@ Before creating JSON input, inspect the selected UPL prompt.
 Identify:
 
 - `name`
-- `description`
+- `desc`
 - declared variables
 - variable types
 - defaults (`def`)
@@ -287,6 +293,7 @@ Identify:
 - object fields (`ofields`)
 - reusable `object_shape` definitions
 - list element types
+- `exclude_condition` declarations on top-level parameters
 - relevant conditional/loop dependencies
 
 The goal is to construct a valid JSON object matching the prompt's declared schema.
@@ -402,6 +409,31 @@ Do not replace a UPL default with an invented value.
 
 When appropriate, omitted parameters may also fall back to their declared defaults according to the CLI behavior. Prefer explicit `null` when the user's intent to use the default is clear.
 
+## Hidden parameters (`exclude_condition`)
+
+A top-level parameter may declare an `exclude_condition` — a condition over previously-declared parameters that controls whether the parameter is collected at all.
+
+- **Truthy → the parameter is hidden.** Its declared `def` default is used, and no override is accepted by any value-supply mechanism, JSON included. Supplying a non-null value for it is a build error.
+- **Falsy or absent → the parameter is shown** and is supplied as usual.
+
+Because the condition depends on other parameter values in the same build, evaluate it against the values actually being submitted. Example:
+
+    credit_card_type:
+      type: option_single
+      opts:
+        - "visa"
+        - "mastercard"
+      def: "visa"
+
+    visa_card_expiry_date:
+      type: string
+      exclude_condition: CREDIT_CARD_TYPE != "visa"
+      def: "12/25"
+
+With `{"credit_card_type": "mastercard"}`, `visa_card_expiry_date` is hidden and MUST be omitted from the JSON.
+
+If a build fails because a hidden parameter was supplied, remove that key rather than changing the value.
+
 ---
 
 # 9. Handling objects and object shapes
@@ -419,6 +451,10 @@ An `object_shape` is a reusable schema and is not independently prompted. It is 
 - an object field using `type: <name>`
 
 When creating JSON, follow the actual structure declared by the prompt.
+
+Field defaults declared on an `object_shape` apply at every site that references it, elements of a `list`/`option_multi` included. An element supplied only partially keeps the shape's own default for each field it does not mention — given a `server` shape defaulting `port: 8080`, `{"servers": [{"host": "only"}]}` resolves to `{ host: "only", port: 8080 }`. Only send the fields whose values the user actually specified; there is no need to restate defaults.
+
+For an `object` that declares both an object-level `def` literal and field-level defaults, the object-level literal wins per key and unmentioned fields fall back to their own defaults, recursively. A partial JSON object behaves the same way.
 
 Do not create a top-level JSON parameter for an `object_shape` merely because its shape is declared in the UPL file.
 
@@ -634,7 +670,7 @@ Always follow this procedure:
    - directory supplied → recursively discover prompts there
    - neither supplied → recursively discover under `~/.upl/prompts`
 3. **Find `.txt` and `.upl` files recursively.**
-4. **Inspect prompt metadata**, especially `name` and `description`.
+4. **Inspect prompt metadata**, especially `name` and `desc`.
 5. **Select the appropriate prompt.**
 6. **Inspect its declared parameters and types.**
 7. **Ask for missing required values when necessary.**

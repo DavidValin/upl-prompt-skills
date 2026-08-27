@@ -1,6 +1,6 @@
 ---
 name: write-upl-prompts
-description: Creates and/or updates valid UPL prompts based on Universal Prompt Language (UPL) specification version 1.0-rc.3
+description: Creates and/or updates valid UPL prompts based on Universal Prompt Language (UPL) specification version 1.0-rc.4
 ---
 
 # UPL Prompt Authoring Skill
@@ -9,7 +9,7 @@ description: Creates and/or updates valid UPL prompts based on Universal Prompt 
 
 You are an expert author of Universal Prompt Language (UPL) prompts.
 
-Your job is to create, validate, debug, and improve `.upl` / `.txt` UPL prompt files that conform to the **Universal Prompt Language 1.0-rc.3 Official Standard Specification**.
+Your job is to create, validate, debug, and improve `.upl` / `.txt` UPL prompt files that conform to the **Universal Prompt Language 1.0-rc.4 Release Candidate specification**.
 
 When asked to create a UPL prompt, output a complete, self-contained UPL file that can be saved directly to disk and validated by a conforming UPL implementation.
 
@@ -32,8 +32,9 @@ UPL files:
 - MUST contain a `params` metadata block.
 - MUST separate metadata from the prompt body using a line containing exactly:
   `--`
-- A leading `--` before metadata is optional.
-- A trailing `--` after the body is optional.
+- A leading `--` before metadata is optional, but when present it MUST be a line containing exactly `--`. A line that merely starts with `--` is not a delimiter.
+- A trailing `--` after the body is optional. Nothing but blank lines may follow it; any non-blank content after the body terminator is a parse error.
+- `params` MUST be the LAST metadata field. The parser ends the `params` block by indentation alone, so any metadata key written after it is not recognised as metadata — it is read as prompt body. Declare `title`/`desc`/`source` before `params`.
 - Indentation MUST use spaces, never tabs.
 - Parameter declarations MUST use lowercase identifiers.
 - Parameter references in the prompt body MUST be uppercase.
@@ -55,6 +56,25 @@ Canonical structure:
     --
     Prompt body containing [[[VARIABLE]]].
     --
+
+---
+
+## Metadata Field Values
+
+`title`, `desc`, and `source` are taken **verbatim**: everything after the `key:` prefix, trimmed of surrounding whitespace only, becomes the value. There is no quote-stripping and no escape processing.
+
+Write them **bare**, unquoted:
+
+    title: My Prompt
+    desc: An example prompt
+
+Quoting is not an error, but the quote characters become part of the stored value:
+
+    desc: "An example prompt"
+
+stores the value including the `"` characters. This differs from `def:` literals, where quotes do delimit a string and are stripped.
+
+`source` is provenance (`<host>/<username>/<prompt_name>`) injected when a prompt is pulled from a UPL repository. Do not set it by hand.
 
 ---
 
@@ -103,6 +123,24 @@ A `long_string` may also use heredoc syntax:
     <<<
 
 The heredoc is only valid for `long_string`.
+
+`type: long_string` MUST be declared BEFORE `def: >>>` inside the variable's block. The heredoc check runs against whatever type has been parsed so far, so a `def: >>>` that appears before `type:` fails with the same error as using a heredoc on a non-`long_string` type, even though the variable is a `long_string` overall.
+
+Correct:
+
+    instructions:
+      type: long_string
+      def: >>>
+    Write a detailed explanation.
+    <<<
+
+Incorrect — `def:` precedes `type:`:
+
+    instructions:
+      def: >>>
+    Write a detailed explanation.
+    <<<
+      type: long_string
 
 ### number
 
@@ -295,9 +333,14 @@ The shape declaration itself is not prompted for.
 
 ## Option Labels
 
-When `option_single` or `option_multi` uses a referenced `object_shape` as its `etype`, `label` is REQUIRED.
+Whenever `option_single` or `option_multi` has an **object-shaped** `etype`, `label` is REQUIRED. This applies equally to both object-shaped forms:
 
-The label MUST name a field on the referenced shape whose type is `string` or `long_string`.
+- the inline `object` etype (the variable declares the element shape via its own `ofields`);
+- a referenced `object_shape` (the by-name form).
+
+The rule is identical either way, because both produce an object-valued option with no built-in string representation.
+
+The label MUST name a field declared on that object shape whose type is `string` or `long_string`.
 
 Example:
 
@@ -318,7 +361,23 @@ Example:
         - { name: "authentication", enabled: true }
         - { name: "logging", enabled: false }
 
-Do not use `label` for scalar etypes.
+`label` is NOT allowed for scalar etypes (`string`, `long_string`, `number`) — it is an error, not merely ignored.
+
+The inline-object form requires `label` too:
+
+    selected_features:
+      type: option_multi
+      etype: object
+      label: name
+      ofields:
+        name:
+          type: string
+        enabled:
+          type: boolean
+          def: false
+      opts:
+        - { name: "authentication", enabled: true }
+        - { name: "logging", enabled: false }
 
 ---
 
@@ -339,6 +398,45 @@ When omitted, use these defaults:
 - `object_shape` → not collected itself; defaults are applied where referenced
 
 Defaults MUST match the declared type.
+
+### Object-level `def` merges per key
+
+An `object`/`object_shape`-typed variable may declare BOTH an object-level `def` literal and field-level `def`s on its `ofields` (or on the `ofields` of the `object_shape` it reuses via `type: <name>`).
+
+When both are present, the object-level literal wins **per key**:
+
+- a field the literal declares takes its value from the literal;
+- a field the literal does not mention falls back to that field's own `def`, or to its type-appropriate zero value if it has none.
+
+The merge is **recursive**: a nested object field inside the literal is itself merged against that nested field's own defaults, rather than replacing the whole nested object wholesale.
+
+Example:
+
+    params:
+      philosopher:
+        type: object_shape
+        ofields:
+          name:
+            type: string
+            def: "Socrates"
+          era:
+            type: number
+            def: -470
+
+      focal:
+        type: philosopher
+        def:
+          name: "Plato"
+
+`focal` resolves to `{ name: "Plato", era: -470 }` — `name` from the literal, `era` from the shape.
+
+### Shape field defaults reach element sites
+
+An `object_shape`'s field-level `def`s apply at every site that references the shape, including `list`/`option_single`/`option_multi` elements. If an individual element is supplied only partially, each unmentioned field falls back to that shape field's own default.
+
+Given a `server` shape defaulting `port: 8080`, an element supplied as `{ "host": "only" }` resolves to `{ host: "only", port: 8080 }`.
+
+There is no way to declare a *per-element* object-level default override the way `type: <name>` reuse can: a list/option has one shared element shape, so only the shape's own field defaults apply uniformly to every element. Supplying a different value per element is only possible through `def:`/JSON/interactive input.
 
 ---
 
@@ -424,6 +522,36 @@ If `FIELDS` is a list of objects containing `name`, the result is the names join
 
 ---
 
+## Literal Delimiters and Escaping
+
+A **matched** triple-delimiter group is never emitted verbatim on its own:
+
+- a matched `{{{...}}}` MUST be a valid ternary/`for`/`if` construct, otherwise it is a parse error;
+- a matched `[[[...]]]` is always interpreted as a placeholder, regardless of what is inside.
+
+To write either sequence literally, escape its **opening** delimiter with a backslash:
+
+    \{{{   renders as   {{{
+    \[[[   renders as   [[[
+
+The backslash is consumed and no construct/placeholder parsing is attempted.
+
+No escape is needed for the closing `}}}`/`]]]`: once the opening delimiter is escaped, the rest is read as plain text, so a later `}}}`/`]]]` is literal text too.
+
+A backslash not immediately followed by `{{{` or `[[[` has no special meaning and is emitted as-is. So `\\{{{` is a literal `\` followed by an escaped `{{{`, and `\n`, `\t`, or a bare `\` elsewhere in the body are untouched. There is no general backslash-escape syntax — only these two delimiter escapes exist.
+
+Use this whenever the prompt body must contain these sequences literally, for example Mustache/Handlebars' unescaped-interpolation syntax:
+
+    Mustache's unescaped syntax looks like \{{{value}}}.
+
+renders to:
+
+    Mustache's unescaped syntax looks like {{{value}}}.
+
+An unmatched opening delimiter (e.g. `[[[` with no closing `]]]`, or a near-miss like `[[[...]]` with two closing brackets) is still emitted verbatim without any escape.
+
+---
+
 ## Ternaries
 
 Use:
@@ -448,7 +576,19 @@ Ternary branches may be:
 - a boolean;
 - literal text/value supported by the UPL condition grammar.
 
-Nested ternaries are not supported.
+**Nested ternaries are not supported.** A ternary's branches are plain values, so a ternary does not chain and associativity does not apply to it.
+
+A second `? :` written inside a branch is NOT parsed as a nested conditional — it is treated as part of the plain-value branch and rendered **literally**, verbatim, whichever branch is taken.
+
+For example:
+
+    {{{A = "x" ? "one" : A = "y" ? "two" : "three"}}}
+
+with `A = "z"` renders the literal text:
+
+    A = "y" ? "two" : "three"
+
+Use `if` blocks instead when branching needs to nest.
 
 ---
 
@@ -460,14 +600,18 @@ Use:
     Authorization: [[[TOKEN]]]
     {{{end if}}}
 
-The condition is bare and uppercase.
+The condition may be ANY condition expression: a bare variable, a comparison, a string test, or a combination built with `and`/`or`/`not` and parentheses.
 
-Do NOT wrap the condition in `[[[...]]]`.
+It is written exactly as in a ternary condition — bare, uppercase variable references, never wrapped in `[[[...]]]`.
 
-Example:
+Examples:
 
     {{{if ENABLED}}}
     Feature is enabled.
+    {{{end if}}}
+
+    {{{if (TIER = "pro" or TIER = "enterprise") and not SUSPENDED}}}
+    Full access enabled.
     {{{end if}}}
 
 ---
@@ -480,12 +624,19 @@ Use:
     - [[[ITEM.NAME]]]
     {{{end for}}}
 
-Both the loop variable and source variable MUST be uppercase.
+Both the loop variable and the source MUST be uppercase.
 
-The source MUST be a list-valued variable:
+The source MUST resolve to a list. It may be:
 
-- `list`
-- `option_multi`
+- a bare list-valued variable — `list` or `option_multi` — e.g. `ENDPOINTS`;
+- a nested field that is list-valued, e.g. `MODEL.ITEMS`;
+- a projected list, e.g. `MODEL.FIELDS.NAME`.
+
+Every segment of a dotted source path MUST be uppercase.
+
+    {{{for FIELD in MODEL.FIELDS}}}
+    - [[[FIELD.NAME]]]
+    {{{end for}}}
 
 Backward-compatible syntax with `[[[VAR]]]` around the list is tolerated by the specification, but prefer the canonical syntax:
 
@@ -494,6 +645,33 @@ Backward-compatible syntax with `[[[VAR]]]` around the list is tolerated by the 
 Do not use:
 
     {{{for item in items}}}
+
+---
+
+## Whitespace Around Block Tags
+
+Exactly one newline is trimmed immediately after each of the four block tags — `{{{for ...}}}`, `{{{if ...}}}`, `{{{end for}}}`, and `{{{end if}}}` — so writing a loop or if-block on its own line does not introduce a blank line into the output.
+
+- If the character(s) immediately following a tag's closing `}}}` are a single newline (`\n` or `\r\n`), that newline is consumed. At most one newline is trimmed per tag; further blank lines are preserved.
+- No other whitespace is trimmed. Leading spaces/tabs before a tag, and a tag not immediately followed by a newline, are left untouched.
+- Ternaries and placeholders consume NO surrounding whitespace; everything around them, including newlines, is preserved verbatim.
+
+So:
+
+    Servers:
+    {{{for SERVER in SERVERS}}}
+    - [[[SERVER]]]
+    {{{end for}}}
+    Done.
+
+renders, for `SERVERS = ["a", "b"]`, to:
+
+    Servers:
+    - a
+    - b
+    Done.
+
+Take this rule into account when predicting a prompt's rendered output; a naive line-for-line reading would wrongly show blank lines.
 
 ---
 
@@ -512,6 +690,9 @@ Supported operators:
 - `<`
 - `>=`
 - `<=`
+- `and`
+- `or`
+- `not`
 
 Examples:
 
@@ -537,21 +718,68 @@ String methods are also supported:
 
 These are equivalent to the infix forms.
 
+### Operand Typing
+
+- Comparison operators (`>`, `<`, `>=`, `<=`) require numbers on both sides.
+- `=` and `!=` require operands of the same scalar kind: number/number, string/string-or-long_string, boolean/boolean.
+- `starts_with` and `ends_with` apply only to strings, on both sides.
+- `contains` is overloaded on the type of its **LEFT** operand, which is the only operand ever checked for list-ness:
+  - left operand is a `list` → membership test, e.g. `TAGS contains "api"`. The right operand must be a single element (`string`, `number`, `boolean`, or `object`, compared by value) and must NOT itself be a list; `TAGS contains OTHER_LIST` is a type error.
+  - left operand is a `string`/`long_string` → substring test, e.g. `TEXT contains "hello"`. The right operand must also be a `string`/`long_string`; anything else, a list included, is a type error. The list must therefore be on the LEFT for membership testing — `"api" contains TAGS` is a type error, not membership.
+  - any other left-operand type (`number`, `boolean`, `object`) is always a type error for `contains`.
+
 ---
 
-## Condition Precedence
+## Logic Combinators (`and`, `or`, `not`)
 
-From highest to lowest:
+Comparisons and string tests may be combined into compound conditions:
 
-1. `!`
+| Operator | Meaning                            | Example                                 |
+|----------|------------------------------------|-----------------------------------------|
+| `not`    | Logical NOT (unary, keyword form)  | `not (TIER = "free" or TIER = "trial")` |
+| `and`    | Logical AND (binary)               | `HOURS > 10 and TAGS contains "api"`    |
+| `or`     | Logical OR (binary)                | `TIER = "pro" or TIER = "enterprise"`   |
+
+`and` and `or` do NOT require boolean-typed operands: each operand is evaluated for truthiness, exactly as an `if` block or bare-variable condition is, and the result is always a boolean.
+
+Both are **short-circuiting**:
+
+- for `and`, the right operand is evaluated only if the left is truthy;
+- for `or`, only if the left is falsy.
+
+This matters when the right operand would otherwise fail to resolve: `HAS_TAGS and TAGS contains "api"` never touches `TAGS` when `HAS_TAGS` is falsy.
+
+`not` is a keyword alias for `!` with **different precedence**:
+
+- `!` binds only to the single primary immediately after it (a variable, literal, or parenthesized group);
+- `not` binds to the entire comparison/equality/string-operator expression that follows.
+
+So `not A contains "x"` means `not (A contains "x")`, whereas `!A contains "x"` means `(!A) contains "x"`.
+
+Prefer `not` when combining with `and`/`or`. Use `!` to negate a single value inline, e.g. `!FLAG`.
+
+---
+
+## Parenthesized Grouping and Condition Precedence
+
+Parentheses `( ... )` group any sub-expression and override the default precedence. A group's contents are a full condition expression, so groups may nest and may contain `and`, `or`, and `not`.
+
+Parentheses are **optional**. A single comparison, string test, or bare variable never needs wrapping, and default precedence already resolves compound expressions unambiguously — `A or B and C` parses as `A or (B and C)`. Use parentheses only to force a grouping precedence would not produce, e.g. `(A or B) and C`.
+
+From highest to lowest precedence:
+
+1. `!` (unary NOT — binds to a single primary: a variable, literal, or parenthesized group)
 2. `>`, `<`, `>=`, `<=`
 3. `=`, `!=`
 4. `contains`, `starts_with`, `ends_with`
-5. `? :`
+5. `not` (unary NOT — binds to the comparison/equality/string-operator expression that follows)
+6. `and`
+7. `or`
+8. `? :` ternary
 
-Ternary is right-associative.
+All binary operators are **left-associative**; `!` and `not` are prefix unary operators.
 
-Parentheses may be used for grouping.
+The ternary remains the lowest-precedence operator, and it is NOT associative — there is nothing to associate, because its branches are plain values rather than nested conditions. `and`/`or`/`not`/parentheses apply only to the ternary's condition, never to its branches.
 
 ---
 
@@ -582,6 +810,11 @@ IMPORTANT:
 - truthy → parameter is HIDDEN/excluded
 - falsy → parameter is shown normally
 
+"Shown"/"hidden" describe the parameter's value-collection status independently of how a given implementation supplies values — interactively, from JSON, or by any other host-defined mechanism:
+
+- **Hidden** (truthy): the parameter's declared `def` default is used, and no override for it is collected or accepted by any means while it remains hidden.
+- **Shown** (falsy or absent): the parameter is collected normally by whatever mechanism the implementation uses.
+
 Example:
 
     credit_card_type:
@@ -597,6 +830,8 @@ Example:
       def: "12/25"
 
 Only parameters declared BEFORE the condition may be referenced.
+
+The condition uses the same syntax as body conditions, so it may use `and`/`or`/`not` and parentheses, and its variable references are bare and uppercase.
 
 Do not put `exclude_condition` on:
 
@@ -634,8 +869,13 @@ For every parameter:
 - `object_shape` has `ofields`.
 - referenced shapes resolve to `object_shape`, never `object`.
 - referenced shape cycles do not exist.
-- `label` is present for referenced object-shape option types.
-- `label` points to a string/long_string field.
+- `label` is present for EVERY object-shaped option etype — the inline `object` etype and a referenced `object_shape` alike.
+- `label` points to a string/long_string field declared on that shape.
+- `label` is absent for scalar etypes.
+- no `object_shape` name collides with a built-in type name.
+- `params` is the last metadata field.
+- `type: long_string` precedes any `def: >>>` heredoc.
+- object-level `def` literals are merged per key over field defaults, not treated as replacing them.
 - defaults match their declared types.
 - `exclude_condition` is only on valid top-level parameters.
 - `exclude_condition` only references previously declared parameters.
@@ -650,6 +890,8 @@ For every parameter:
 - `for` blocks are balanced.
 - `if` blocks are balanced.
 - There are no stray `end for`/`end if` blocks.
+- Loop sources that are dotted paths resolve to a list and are fully uppercase.
+- Literal `{{{`/`[[[` sequences intended as text are escaped as `\{{{`/`\[[[`.
 - Conditions use valid operators and types.
 - Ternaries use valid syntax.
 - Runtime-only undeclared roots may be used because the specification explicitly permits them; their values are checked at render time.
@@ -678,7 +920,16 @@ Do not:
 - put `exclude_condition` on nested fields;
 - use forward references inside `exclude_condition`;
 - wrap condition variables in `[[[...]]]`;
-- forget to close `for` or `if` blocks.
+- forget to close `for` or `if` blocks;
+- name an `object_shape` after a built-in type (`string`, `long_string`, `number`, `boolean`, `list`, `object`, `object_shape`, `option_single`, `option_multi`) — built-in names are reserved;
+- omit `label` on an inline `object` option etype;
+- put `label` on a scalar option etype;
+- declare any metadata key after `params`;
+- put non-blank content after the body's trailing `--`;
+- write `def: >>>` before `type: long_string`;
+- write a matched `{{{...}}}` that is not a valid ternary/`for`/`if`, or an unescaped literal `{{{`/`[[[`;
+- nest a ternary inside a ternary branch and expect it to evaluate;
+- assume `contains` finds list membership when the list is the RIGHT operand.
 
 ---
 
@@ -690,17 +941,21 @@ Official release:
 
     https://github.com/DavidValin/universal-prompt-language/releases/tag/0.1.1-rc.2
 
-Available artifacts:
+Version note: `0.1.1-rc.2` is the latest PUBLISHED release. It predates several
+1.0-rc.4 spec features — the `and`/`or`/`not` combinators, the `\{{{`/`\[[[`
+escapes, dotted-path `for` sources, and the `label` requirement on inline
+`object` option etypes. A prompt using those constructs will be rejected by an
+`0.1.1-rc.2` binary. When a prompt must validate against the installed CLI,
+either avoid those constructs or build a newer binary from source (see
+"Installing from Source" below). Do not assume a newer release exists without
+checking the releases page.
+
+Available artifacts — these six are the ONLY assets published for this release.
+Do not construct any other asset name or URL (there are no `_musl` builds):
 
 ### Linux ARM64 / AArch64
 
-glibc:
-
     https://github.com/DavidValin/universal-prompt-language/releases/download/0.1.1-rc.2/upl-aarch64_linux.tar.gz
-
-musl:
-
-    https://github.com/DavidValin/universal-prompt-language/releases/download/0.1.1-rc.2/upl-aarch64_linux_musl.tar.gz
 
 ### macOS ARM64 / Apple Silicon
 
@@ -712,13 +967,7 @@ musl:
 
 ### Linux x86_64
 
-glibc:
-
     https://github.com/DavidValin/universal-prompt-language/releases/download/0.1.1-rc.2/upl-x86_64_linux.tar.gz
-
-musl:
-
-    https://github.com/DavidValin/universal-prompt-language/releases/download/0.1.1-rc.2/upl-x86_64_linux_musl.tar.gz
 
 ### macOS Intel x86_64
 
@@ -758,9 +1007,10 @@ Typical results:
     x86_64
     aarch64
 
-For glibc Linux, use the normal Linux archive.
-
-For systems using musl, use the `_musl` artifact.
+There is a single Linux artifact per architecture; the published release has no
+musl-specific build. On a musl-based distribution such as Alpine, the glibc
+binary may not run — in that case build from source rather than looking for a
+`_musl` asset that does not exist.
 
 After extracting:
 
@@ -829,6 +1079,23 @@ or:
     upl --help
 
 Do not claim a command is available unless it has actually been verified in the user's environment.
+
+---
+
+## Installing from Source
+
+If no published release contains the needed spec features, or no prebuilt
+artifact suits the platform, build from the repository. The project's
+documented source installation is:
+
+    make release
+    sudo make install
+
+Then verify:
+
+    upl --help
+
+Do not build from source when a suitable prebuilt release artifact would do.
 
 ---
 
@@ -994,8 +1261,8 @@ Remember these non-obvious rules:
 6. `option_single` may omit `etype`; default is `string`.
 7. `option_multi` MUST specify `etype`.
 8. Option lists need at least two entries.
-9. Object-shaped options require `label`.
-10. `label` must reference a string or long_string field.
+9. Object-shaped options require `label` — inline `object` etype and referenced `object_shape` alike.
+10. `label` must reference a string or long_string field, and is not allowed on scalar etypes.
 11. `exclude_condition` truthy means HIDE the parameter.
 12. `exclude_condition` may only reference previously declared top-level parameters.
 13. Body variable references MUST be uppercase.
@@ -1007,9 +1274,9 @@ Remember these non-obvious rules:
 19. `for` loops only iterate list-valued variables.
 20. `if` blocks and `for` loops must be balanced.
 21. `[[[` and `{{{` are the only expansion delimiters.
-22. Unmatched expansion delimiters are emitted literally, except malformed recognized blocks which must be reported appropriately.
+22. Unmatched expansion delimiters are emitted literally, except malformed recognized blocks which must be reported appropriately. A MATCHED `{{{...}}}`/`[[[...]]]` is never literal — escape the opening delimiter as `\{{{`/`\[[[` to emit it as text.
 23. `==` is an alias for `=`.
-24. `contains` works for strings and list membership.
+24. `contains` dispatches on its LEFT operand only: list-left means membership (right must not be a list), string-left means substring (right must be a string). Other left types are type errors.
 25. `starts_with` and `ends_with` only apply to strings.
 26. Numeric comparisons require numbers on both sides.
 27. Equality requires compatible scalar types.
@@ -1021,6 +1288,20 @@ Remember these non-obvious rules:
 33. UPL uses spaces for indentation; tabs are invalid.
 34. `name` must match the file's base name.
 35. Only `.upl` and `.txt` extensions are valid.
+36. `params` must be the last metadata field.
+37. `title`, `desc`, and `source` are stored verbatim; quotes are not stripped, so write them bare.
+38. The header delimiter must be a line containing exactly `--`, not merely a line starting with `--`.
+39. Non-blank content after the body's trailing `--` is a parse error.
+40. `type: long_string` must be declared before `def: >>>`.
+41. An object-level `def` literal overrides field defaults per key, recursively; unmentioned fields keep their own defaults.
+42. `object_shape` field defaults apply at every reference site, including partially-supplied list/option elements.
+43. `and`, `or`, and `not` combine conditions; `and`/`or` are truthiness-based and short-circuiting.
+44. `not` binds looser than `!`: `not A contains "x"` is `not (A contains "x")`; `!A contains "x"` is `(!A) contains "x"`.
+45. Exactly one newline is trimmed after each `for`/`if`/`end for`/`end if` tag; nothing else trims whitespace.
+46. A ternary is not associative and nested ternaries render literally.
+47. A `for` source may be any uppercase dotted path resolving to a list.
+48. An `if` condition may be any condition expression, not only a bare variable.
+49. Built-in type names are reserved and cannot be used as `object_shape` names.
 
 ---
 
@@ -1053,6 +1334,16 @@ Before presenting any generated UPL prompt, perform this checklist:
 - [ ] No unsupported UPL syntax is used.
 - [ ] The final file is self-contained.
 - [ ] The final output can be copied directly into a `.upl` file.
+- [ ] `params` is the last metadata field.
+- [ ] `title`/`desc` are written bare, without quotes.
+- [ ] Nothing follows the body's trailing `--`.
+- [ ] Every `def: >>>` heredoc is preceded by `type: long_string`.
+- [ ] Every object-shaped option etype has a `label`; no scalar etype has one.
+- [ ] No `object_shape` is named after a built-in type.
+- [ ] Literal `{{{`/`[[[` text is escaped.
+- [ ] `contains` operands are the right way round.
+- [ ] `and`/`or`/`not` precedence is as intended, with parentheses where needed.
+- [ ] Rendered-output expectations account for block-tag newline trimming.
 
 When possible, recommend validating the finished file with the UPL CLI after installation.
 

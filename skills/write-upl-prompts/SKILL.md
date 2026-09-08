@@ -1,6 +1,6 @@
 ---
 name: write-upl-prompts
-description: Creates and/or updates valid UPL prompts based on Universal Prompt Language (UPL) specification version 1.0-rc.4
+description: Creates and/or updates valid UPL prompts based on Universal Prompt Language (UPL) specification version 1.0
 ---
 
 # UPL Prompt Authoring Skill
@@ -9,7 +9,11 @@ description: Creates and/or updates valid UPL prompts based on Universal Prompt 
 
 You are an expert author of Universal Prompt Language (UPL) prompts.
 
-Your job is to create, validate, debug, and improve `.upl` / `.txt` UPL prompt files that conform to the **Universal Prompt Language 1.0-rc.4 Release Candidate specification**.
+Your job is to create, validate, debug, and improve `.upl` / `.txt` UPL prompt files that conform to the **Universal Prompt Language 1.0 specification** (production release, published 2026-09-08).
+
+The authoritative specification is `upl-spec/upl-1.0-rfc.md` in the
+[universal-prompt-language](https://github.com/DavidValin/universal-prompt-language)
+repository; section references below (§2, §3.4, §5.1 …) point into it.
 
 When asked to create a UPL prompt, output a complete, self-contained UPL file that can be saved directly to disk and validated by a conforming UPL implementation.
 
@@ -34,8 +38,11 @@ UPL files:
   `--`
 - A leading `--` before metadata is optional, but when present it MUST be a line containing exactly `--`. A line that merely starts with `--` is not a delimiter.
 - A trailing `--` after the body is optional. Nothing but blank lines may follow it; any non-blank content after the body terminator is a parse error.
+- The body ends at the FIRST line whose trimmed content is exactly `--`. There is no escape for it, so a lone `--` line can never be literal body text: never write a bare `--` as a divider, a YAML separator, or a standalone `cmd -- args` example inside the body. Give the line trailing context (e.g. `cmd -- args` with the command on it) or use a different divider.
 - `params` MUST be the LAST metadata field. The parser ends the `params` block by indentation alone, so any metadata key written after it is not recognised as metadata — it is read as prompt body. Declare `title`/`desc`/`source` before `params`.
-- Indentation MUST use spaces, never tabs.
+- Indentation MUST use spaces, never tabs. A tab anywhere in the indentation of the metadata section is a parse error, whatever column it would otherwise land on.
+- Every variable and every object field MUST declare a `type`. A declaration without `type` is a parse error.
+- Two variables (or two fields of the same object) MUST NOT share a name within the same block; a duplicate declaration is a parse error.
 - Parameter declarations MUST use lowercase identifiers.
 - Parameter references in the prompt body MUST be uppercase.
 - Object field references MUST use uppercase dotted paths.
@@ -175,8 +182,8 @@ Valid scalar etypes:
 
 It may also use:
 
-- inline `object`
-- a referenced `object_shape`
+- inline `object` — the list itself then declares the element shape via its own `ofields`;
+- a referenced `object_shape`.
 
 Example:
 
@@ -187,6 +194,28 @@ Example:
         - "ethics"
         - "logic"
         - "metaphysics"
+
+An inline `etype: object` MUST declare `ofields` on the list (or option) itself.
+This is the one case where `ofields` is legal on a type other than
+`object`/`object_shape`, and it is required there — an inline object etype with
+no `ofields` is a parse error:
+
+    concepts:
+      type: list
+      etype: object
+      ofields:
+        name:
+          type: string
+          def: "free will"
+        field:
+          type: string
+          def: "determinism"
+      def:
+        - { name: "free will", field: "determinism" }
+
+A by-name `etype: <object_shape>` takes its shape from the referenced
+`object_shape` instead and MUST NOT also declare `ofields`. A list declares one
+form or the other, never both.
 
 ### object
 
@@ -266,6 +295,9 @@ Example:
         - "production"
       def: "production"
 
+`def` MUST be one of the declared `opts` (see "Option defaults must be offered
+options" below).
+
 ### option_multi
 
 Multiple selections.
@@ -294,6 +326,12 @@ Example:
         - "metrics"
 
 `opts` MUST contain at least two entries.
+
+Every element of an `option_multi` `def` MUST be one of the declared `opts`.
+
+As with `list`, an inline `etype: object` on an `option_single`/`option_multi`
+declares the element shape through the option variable's own `ofields`, and that
+`ofields` block is required.
 
 ---
 
@@ -438,6 +476,37 @@ Given a `server` shape defaulting `port: 8080`, an element supplied as `{ "host"
 
 There is no way to declare a *per-element* object-level default override the way `type: <name>` reuse can: a list/option has one shared element shape, so only the shape's own field defaults apply uniformly to every element. Supplying a different value per element is only possible through `def:`/JSON/interactive input.
 
+An `object_shape` may also carry its own object-level `def` literal; like its field defaults, that literal is applied at every site that references the shape.
+
+### Option defaults must be offered options
+
+For `option_single` and `option_multi`, the `def` value MUST additionally be one of the declared `opts`:
+
+- `option_single` — the value itself must appear in `opts`;
+- `option_multi` — **every** element of the `def` list must appear in `opts`.
+
+A `def` that is not an offered option is a **parse error** (`Default for '<param>' is not one of its declared opts`), exactly like a value supplied at build time. This is the same rule the CLI applies to JSON/interactive input.
+
+Object-shaped entries are compared after being completed from the element shape's field defaults, so a partially written object `def` still matches the option it names in full:
+
+    feature:
+      type: object_shape
+      ofields:
+        name:
+          type: string
+        enabled:
+          type: boolean
+          def: false
+
+    selected:
+      type: option_single
+      etype: feature
+      label: name
+      opts:
+        - { name: "auth", enabled: true }
+        - { name: "logs", enabled: false }
+      def: { name: "logs" }
+
 ---
 
 ## Literal Values
@@ -536,7 +605,13 @@ To write either sequence literally, escape its **opening** delimiter with a back
 
 The backslash is consumed and no construct/placeholder parsing is attempted.
 
-No escape is needed for the closing `}}}`/`]]]`: once the opening delimiter is escaped, the rest is read as plain text, so a later `}}}`/`]]]` is literal text too.
+No escape is needed for the closing `}}}`/`]]]`: once the opening delimiter is escaped no construct is opened, so a later `}}}`/`]]]` is literal text too.
+
+Scanning resumes **right after the escaped opener**, so a real placeholder or construct later on the same line is still expanded:
+
+    \[[[ literal ]]] then [[[NAME]]]
+
+renders the first group literally and substitutes the second. An escaped opener inside a `for`/`if` body is likewise literal and never opens or closes a block.
 
 A backslash not immediately followed by `{{{` or `[[[` has no special meaning and is emitted as-is. So `\\{{{` is a literal `\` followed by an escaped `{{{`, and `\n`, `\t`, or a bare `\` elsewhere in the body are untouched. There is no general backslash-escape syntax — only these two delimiter escapes exist.
 
@@ -783,6 +858,25 @@ The ternary remains the lowest-precedence operator, and it is NOT associative �
 
 ---
 
+## Value Rendering
+
+When a value is substituted into the body (via `[[[VAR]]]`, a ternary branch, or list joining), it renders as:
+
+| Type | Rendering |
+|---|---|
+| `string` / `long_string` | verbatim (may contain newlines) |
+| `number` | integer-valued numbers without a fractional part (`80`); otherwise the full float (`3.14`); negatives prefixed with `-` |
+| `boolean` | `true` / `false` |
+| `list` | elements rendered per this table, joined with `", "` |
+| `object` | `field: value` pairs joined with `", "`, **without** enclosing braces, in declaration order |
+
+So `[[[CONCEPTS]]]` over a list of objects renders as
+`name: free will, field: determinism, name: justice, field: ethics` — for structured output use a `for` loop, a dotted path, or list field projection instead.
+
+An `option_multi` renders its chosen values joined with `", "`; an empty selection renders as the empty string.
+
+---
+
 ## Truthiness
 
 Truthiness is:
@@ -866,6 +960,7 @@ For every parameter:
 - `option_single` defaults to `etype: string` if omitted.
 - list/object option values match their declared types.
 - `object` has either inline `ofields` or `type: <object_shape_name>`, never both.
+- an inline `etype: object` on a `list`/`option_single`/`option_multi` declares `ofields` on that variable; a by-name `etype: <object_shape>` does not.
 - `object_shape` has `ofields`.
 - referenced shapes resolve to `object_shape`, never `object`.
 - referenced shape cycles do not exist.
@@ -875,10 +970,14 @@ For every parameter:
 - no `object_shape` name collides with a built-in type name.
 - `params` is the last metadata field.
 - `type: long_string` precedes any `def: >>>` heredoc.
+- every `option_single`/`option_multi` `def` is one of the declared `opts` (every element, for `option_multi`).
+- every variable and field declares a `type`.
+- no name is declared twice in the same block.
+- every declared name (variables and object fields) is lowercase alphanumeric + `_`.
 - object-level `def` literals are merged per key over field defaults, not treated as replacing them.
 - defaults match their declared types.
 - `exclude_condition` is only on valid top-level parameters.
-- `exclude_condition` only references previously declared parameters.
+- `exclude_condition` only references previously declared parameters, and never an `object_shape` (an `object_shape` is a type definition, not a parameter).
 
 ## Body Validation
 
@@ -894,7 +993,7 @@ For every parameter:
 - Literal `{{{`/`[[[` sequences intended as text are escaped as `\{{{`/`\[[[`.
 - Conditions use valid operators and types.
 - Ternaries use valid syntax.
-- Runtime-only undeclared roots may be used because the specification explicitly permits them; their values are checked at render time.
+- Runtime-only undeclared roots may be used because the specification explicitly permits them; their values are checked at render time. Avoid them in prompts that will be built with `upl build-from-json`: it cannot supply a value for an undeclared parameter, so the build fails with `No value provided for variable '<NAME>'`.
 
 ---
 
@@ -913,6 +1012,11 @@ Do not:
 - reference an `object` by name through `type:`;
 - define an `object_shape` without `ofields`;
 - use `etype: object_shape`;
+- declare an inline `etype: object` without `ofields`;
+- give an `option_single`/`option_multi` a `def` that is not among its `opts`;
+- declare a variable or field without `type`;
+- declare the same name twice in one block;
+- reference an `object_shape` from an `exclude_condition`;
 - use `boolean` as an option etype;
 - use `list` as an option etype;
 - use `option_multi` without `etype`;
@@ -933,49 +1037,92 @@ Do not:
 
 ---
 
-# CLI Usage and Installation
+# Validating a Prompt with the CLI
 
-When the user asks to validate, render, test, inspect, or otherwise use a UPL file and the UPL CLI is not available, explain that the CLI can be installed from the official GitHub release artifacts.
+The `upl` CLI is the reference implementation: parsing, validation and rendering
+all go through it, so the fastest way to check a prompt is to build it.
 
-Official release:
+Render with the declared defaults (parses, validates and renders — no input needed):
 
-    https://github.com/DavidValin/universal-prompt-language/releases/tag/0.1.1-rc.2
+    upl build --no-input ./my_prompt.txt
 
-Version note: `0.1.1-rc.2` is the latest PUBLISHED release. It predates several
-1.0-rc.4 spec features — the `and`/`or`/`not` combinators, the `\{{{`/`\[[[`
-escapes, dotted-path `for` sources, and the `label` requirement on inline
-`object` option etypes. A prompt using those constructs will be rejected by an
-`0.1.1-rc.2` binary. When a prompt must validate against the installed CLI,
-either avoid those constructs or build a newer binary from source (see
-"Installing from Source" below). Do not assume a newer release exists without
-checking the releases page.
+Or, equivalently, through the JSON interface with an empty object (every
+parameter then falls back to its `def:`):
 
-Available artifacts — these six are the ONLY assets published for this release.
-Do not construct any other asset name or URL (there are no `_musl` builds):
+    printf '{}' > /tmp/upl-defaults.json
+    upl build-from-json ./my_prompt.txt /tmp/upl-defaults.json
 
-### Linux ARM64 / AArch64
+Both write the rendered prompt to **stdout** and everything else (build header,
+TUI, errors) to **stderr**, and exit non-zero on any parse/validation error, so
+either is safe to run non-interactively.
 
-    https://github.com/DavidValin/universal-prompt-language/releases/download/0.1.1-rc.2/upl-aarch64_linux.tar.gz
+Parse-stage errors carry the offending line number and field name, for example:
 
-### macOS ARM64 / Apple Silicon
+    Error: line 4: variable 'x' has no 'type' (RFC §3: type is required)
+    Error: line 6: variable 'x' is declared more than once in the same block
+    Error: Default for 'tier' is not one of its declared opts: String("c")
+    Error: List/option variable 'xs' has etype 'object' but no 'ofields' block; an inline object element shape must declare its fields
+    Error: prompt name 'my_prompt' does not match file base name 'other'
 
-    https://github.com/DavidValin/universal-prompt-language/releases/download/0.1.1-rc.2/upl-aarch64_macos.tar.gz
+Read the message literally and fix the named field rather than restructuring
+the prompt.
 
-### Windows ARM64
+Note on tabs: released binaries up to `0.1.1-rc.5` report a tab-indented
+`params` block as `Content found after the body's '--' terminator` instead of a
+tab error. If that message appears and the body looks fine, check for tab
+indentation in the metadata section.
 
-    https://github.com/DavidValin/universal-prompt-language/releases/download/0.1.1-rc.2/upl-aarch64_windows.zip
+---
 
-### Linux x86_64
+# CLI Installation
 
-    https://github.com/DavidValin/universal-prompt-language/releases/download/0.1.1-rc.2/upl-x86_64_linux.tar.gz
+When the user asks to validate, render, test, inspect, or otherwise use a UPL
+file and the UPL CLI is not available, install it from the official GitHub
+release artifacts.
 
-### macOS Intel x86_64
+Latest published release:
 
-    https://github.com/DavidValin/universal-prompt-language/releases/download/0.1.1-rc.2/upl-x86_64_macos-intel.tar.gz
+    0.1.1-rc.5
 
-### Windows x86_64
+    https://github.com/DavidValin/universal-prompt-language/releases/tag/0.1.1-rc.5
 
-    https://github.com/DavidValin/universal-prompt-language/releases/download/0.1.1-rc.2/upl-x86_64_windows.zip
+`0.1.1-rc.5` implements the full UPL 1.0 specification (the `and`/`or`/`not`
+combinators, `\{{{`/`\[[[` escapes, dotted-path `for` sources, `label` on
+inline `object` option etypes, the option-`def`-in-`opts` rule, line-numbered
+parse errors). The only behaviour fixed after it is the tab-indentation error
+message described above. Do not assume a newer release exists without checking
+the releases page; check with:
+
+    curl -s https://api.github.com/repos/DavidValin/universal-prompt-language/releases/latest
+
+Eight assets are published per release — do not construct any other asset name
+or URL:
+
+    upl-x86_64_linux.tar.gz            Linux x86_64 (glibc)
+    upl-aarch64_linux.tar.gz           Linux ARM64 / AArch64 (glibc)
+    upl-x86_64_linux_musl.tar.gz       Linux x86_64 (static musl, e.g. Alpine)
+    upl-aarch64_linux_musl.tar.gz      Linux ARM64 (static musl, e.g. Alpine)
+    upl-x86_64_macos-intel.tar.gz      macOS Intel
+    upl-aarch64_macos.tar.gz           macOS Apple Silicon
+    upl-x86_64_windows.zip             Windows x86_64
+    upl-aarch64_windows.zip            Windows ARM64
+
+Download URLs follow the pattern:
+
+    https://github.com/DavidValin/universal-prompt-language/releases/download/0.1.1-rc.5/<asset-name>
+
+for example:
+
+    https://github.com/DavidValin/universal-prompt-language/releases/download/0.1.1-rc.5/upl-x86_64_linux.tar.gz
+    https://github.com/DavidValin/universal-prompt-language/releases/download/0.1.1-rc.5/upl-aarch64_macos.tar.gz
+    https://github.com/DavidValin/universal-prompt-language/releases/download/0.1.1-rc.5/upl-x86_64_windows.zip
+
+With the GitHub CLI available, prefer:
+
+    gh release download 0.1.1-rc.5 \
+      --repo DavidValin/universal-prompt-language \
+      --pattern '<asset-name>'
+
 
 ---
 
@@ -1007,10 +1154,10 @@ Typical results:
     x86_64
     aarch64
 
-There is a single Linux artifact per architecture; the published release has no
-musl-specific build. On a musl-based distribution such as Alpine, the glibc
-binary may not run — in that case build from source rather than looking for a
-`_musl` asset that does not exist.
+Two Linux artifacts are published per architecture: a glibc build
+(`upl-<arch>_linux.tar.gz`) and a static musl build
+(`upl-<arch>_linux_musl.tar.gz`). Use the musl asset on a musl-based
+distribution such as Alpine, where the glibc binary will not run.
 
 After extracting:
 
@@ -1084,9 +1231,9 @@ Do not claim a command is available unless it has actually been verified in the 
 
 ## Installing from Source
 
-If no published release contains the needed spec features, or no prebuilt
-artifact suits the platform, build from the repository. The project's
-documented source installation is:
+If no prebuilt artifact suits the platform, or the very latest fixes are
+needed, build from the repository. The project's documented source installation
+is:
 
     make release
     sudo make install
@@ -1270,7 +1417,7 @@ Remember these non-obvious rules:
 15. Loop variables MUST be uppercase.
 16. Dotted object paths must use uppercase segments.
 17. Unknown fields on declared objects are parse errors.
-18. Undeclared root variables are allowed in the body and are checked at render time.
+18. Undeclared root variables are allowed in the body and are checked at render time — but they can only be supplied by a host that injects values programmatically. `upl build-from-json` rejects any JSON key that is not a declared parameter, so a prompt meant to be built non-interactively MUST declare every variable its body references.
 19. `for` loops only iterate list-valued variables.
 20. `if` blocks and `for` loops must be balanced.
 21. `[[[` and `{{{` are the only expansion delimiters.
@@ -1302,6 +1449,14 @@ Remember these non-obvious rules:
 47. A `for` source may be any uppercase dotted path resolving to a list.
 48. An `if` condition may be any condition expression, not only a bare variable.
 49. Built-in type names are reserved and cannot be used as `object_shape` names.
+50. An `option_single`/`option_multi` `def` must be one of the declared `opts` (every element, for `option_multi`); object-shaped entries are compared after completion from the shape's field defaults.
+51. An inline `etype: object` on a `list`/`option_single`/`option_multi` must declare `ofields` on that variable; this is the only case where `ofields` is legal outside `object`/`object_shape`, and a by-name `etype: <object_shape>` must not declare it.
+52. Every variable and field declaration requires a `type`.
+53. A name declared twice in the same block is a parse error.
+54. An `exclude_condition` may not reference an `object_shape` (it is a type definition, not a parameter).
+55. Tab indentation in the metadata section is a parse error at any column.
+56. Scanning resumes right after an escaped `\{{{`/`\[[[` opener, so later constructs on the same line still expand; an escaped opener inside a `for`/`if` body never opens or closes a block.
+57. Parse-stage errors report the offending line number and field name.
 
 ---
 
@@ -1344,6 +1499,17 @@ Before presenting any generated UPL prompt, perform this checklist:
 - [ ] `contains` operands are the right way round.
 - [ ] `and`/`or`/`not` precedence is as intended, with parentheses where needed.
 - [ ] Rendered-output expectations account for block-tag newline trimming.
+- [ ] Every option `def` is one of that option's `opts`.
+- [ ] Every inline `etype: object` declares `ofields`; no by-name `etype` reference does.
+- [ ] Every variable and field declares a `type`.
+- [ ] No name is declared twice in the same block.
+- [ ] No `exclude_condition` references an `object_shape`.
+- [ ] Indentation uses spaces only.
 
-When possible, recommend validating the finished file with the UPL CLI after installation.
+When possible, validate the finished file with the UPL CLI:
+
+    upl build --no-input ./<name>.txt
+
+(or `upl build-from-json ./<name>.txt <json>` with an empty `{}` object), and
+fix whatever it reports before presenting the prompt.
 

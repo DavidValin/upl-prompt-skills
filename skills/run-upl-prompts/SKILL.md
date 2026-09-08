@@ -13,7 +13,7 @@ UPL prompts are `.txt` or `.upl` files containing typed parameters, conditionals
 
 1. **Always use the JSON-based UPL execution interface.**
    - Use `upl build-from-json <prompt> <json-file>`.
-   - Never use `upl build`, `upl b`, the interactive browser, or interactive parameter collection.
+   - Never use `upl build`, `upl b`, the interactive browser, or interactive parameter collection. (`upl build --no-input` is non-interactive but renders with the declared defaults only — it cannot carry the user's values, so it is not a substitute here.)
    - Never manually interpret or render UPL syntax when the CLI is available.
 
 2. **Prompt discovery is recursive.**
@@ -38,6 +38,7 @@ UPL prompts are `.txt` or `.upl` files containing typed parameters, conditionals
    - When listing or choosing prompts, inspect the prompt metadata and use its `name` and `desc` to determine what the prompt does.
    - Do not rely solely on filenames.
    - If metadata cannot be parsed safely, show the filename/path and state that metadata was unavailable.
+   - A prompt's `name` MUST equal its file's base name (a single trailing `.prompt` segment is stripped), so never rename or copy a prompt to a different base name in order to run it — the build fails with `prompt name '<name>' does not match file base name '<base>'`.
 
 6. **Never guess parameter values when the user has not provided enough information.**
    - Inspect the prompt's declared parameters.
@@ -47,6 +48,8 @@ UPL prompts are `.txt` or `.upl` files containing typed parameters, conditionals
 
 7. **The JSON input must be an object.**
    - Parameter names are matched case-insensitively by UPL.
+   - Every key MUST name a declared parameter. An unknown key is a build error (`unknown parameter '<key>' in JSON`) — there is no silent ignoring, so do not add keys "just in case".
+   - Omitting a parameter is allowed: it falls back to its declared `def`.
    - Use values matching the declared types:
      - `string` / `long_string` → JSON string
      - `number` → JSON number
@@ -56,6 +59,8 @@ UPL prompts are `.txt` or `.upl` files containing typed parameters, conditionals
      - `option_single` → one allowed value
      - `option_multi` → JSON array containing allowed values
    - `null` means use the parameter's declared default.
+   - `option_single`/`option_multi` values must be among the declared `opts`, otherwise the build fails with `value for '<param>' is not one of the declared opts`.
+   - An `object_shape` parameter is a type definition, not an input: setting it is a build error (`parameter '<name>' is an object_shape type definition and cannot be set via JSON`). Simply omit it.
    - Do not supply a value for a parameter that is hidden by its `exclude_condition` (§8 below); doing so is a build error.
 
 8. **Do not modify the user's UPL prompt unless explicitly asked.**
@@ -81,7 +86,19 @@ On Windows PowerShell:
 
     Get-Command upl -ErrorAction SilentlyContinue
 
-If `upl` is available, use it.
+If `upl` is available, check its version — the version is the first line of
+the help output (there is no `--version` flag; passing one prints the help and
+exits non-zero):
+
+    upl --help 2>&1 | head -1
+
+If it is older than `0.1.1-rc.5`, it predates parts of the UPL 1.0
+specification (the `and`/`or`/`not` combinators, the `\{{{`/`\[[[` delimiter
+escapes, dotted-path `for` sources, `label` on inline `object` option etypes,
+the option-`def`-must-be-in-`opts` rule, line-numbered parse errors). If a
+prompt that looks valid is rejected for one of those constructs, report the
+version mismatch and upgrade the binary — never rewrite the user's prompt to
+work around an old CLI.
 
 If it is not available, install the appropriate release artifact before continuing.
 
@@ -89,40 +106,45 @@ If it is not available, install the appropriate release artifact before continui
 
 The latest published release is:
 
-    0.1.1-rc.2
+    0.1.1-rc.5
 
 Repository:
 
     DavidValin/universal-prompt-language
 
-Available release artifacts — these six are the ONLY assets published for this
-release. Do not construct any other asset name or URL; in particular there are
-no `_musl` builds:
+`0.1.1-rc.5` implements the full UPL 1.0 specification. Do not assume a newer
+release exists without checking; when in doubt:
 
-    upl-aarch64_linux.tar.gz
-    upl-aarch64_macos.tar.gz
-    upl-aarch64_windows.zip
-    upl-x86_64_linux.tar.gz
-    upl-x86_64_macos-intel.tar.gz
-    upl-x86_64_windows.zip
+    curl -s https://api.github.com/repos/DavidValin/universal-prompt-language/releases/latest
 
-Version note: `0.1.1-rc.2` predates several UPL 1.0-rc.4 spec features (the
-`and`/`or`/`not` combinators, the `\{{{`/`\[[[` delimiter escapes, dotted-path
-`for` sources). A prompt using them will fail to build on this binary. If a
-prompt that looks valid is rejected for one of those constructs, report the
-version mismatch rather than rewriting the user's prompt; a newer binary can be
-built from source (§18).
+Eight assets are published per release — these are the ONLY assets. Do not
+construct any other asset name or URL:
+
+    upl-x86_64_linux.tar.gz            Linux x86_64 (glibc)
+    upl-aarch64_linux.tar.gz           Linux ARM64 / AArch64 (glibc)
+    upl-x86_64_linux_musl.tar.gz       Linux x86_64 (static musl, e.g. Alpine)
+    upl-aarch64_linux_musl.tar.gz      Linux ARM64 (static musl, e.g. Alpine)
+    upl-x86_64_macos-intel.tar.gz      macOS Intel
+    upl-aarch64_macos.tar.gz           macOS Apple Silicon
+    upl-x86_64_windows.zip             Windows x86_64
+    upl-aarch64_windows.zip            Windows ARM64
 
 ### Release URLs
 
-Use the exact artifact corresponding to the current operating system and architecture.
+Download URLs follow the pattern:
 
-    https://github.com/DavidValin/universal-prompt-language/releases/download/0.1.1-rc.2/upl-aarch64_linux.tar.gz
-    https://github.com/DavidValin/universal-prompt-language/releases/download/0.1.1-rc.2/upl-aarch64_macos.tar.gz
-    https://github.com/DavidValin/universal-prompt-language/releases/download/0.1.1-rc.2/upl-aarch64_windows.zip
-    https://github.com/DavidValin/universal-prompt-language/releases/download/0.1.1-rc.2/upl-x86_64_linux.tar.gz
-    https://github.com/DavidValin/universal-prompt-language/releases/download/0.1.1-rc.2/upl-x86_64_macos-intel.tar.gz
-    https://github.com/DavidValin/universal-prompt-language/releases/download/0.1.1-rc.2/upl-x86_64_windows.zip
+    https://github.com/DavidValin/universal-prompt-language/releases/download/0.1.1-rc.5/<asset-name>
+
+Use the exact artifact corresponding to the current operating system and architecture, for example:
+
+    https://github.com/DavidValin/universal-prompt-language/releases/download/0.1.1-rc.5/upl-x86_64_linux.tar.gz
+    https://github.com/DavidValin/universal-prompt-language/releases/download/0.1.1-rc.5/upl-aarch64_linux.tar.gz
+    https://github.com/DavidValin/universal-prompt-language/releases/download/0.1.1-rc.5/upl-x86_64_linux_musl.tar.gz
+    https://github.com/DavidValin/universal-prompt-language/releases/download/0.1.1-rc.5/upl-aarch64_linux_musl.tar.gz
+    https://github.com/DavidValin/universal-prompt-language/releases/download/0.1.1-rc.5/upl-x86_64_macos-intel.tar.gz
+    https://github.com/DavidValin/universal-prompt-language/releases/download/0.1.1-rc.5/upl-aarch64_macos.tar.gz
+    https://github.com/DavidValin/universal-prompt-language/releases/download/0.1.1-rc.5/upl-x86_64_windows.zip
+    https://github.com/DavidValin/universal-prompt-language/releases/download/0.1.1-rc.5/upl-aarch64_windows.zip
 
 ### Preferred installation method when GitHub CLI is available
 
@@ -132,7 +154,7 @@ Check for GitHub CLI:
 
 If available, download the matching release asset:
 
-    gh release download 0.1.1-rc.2 \
+    gh release download 0.1.1-rc.5 \
       --repo DavidValin/universal-prompt-language \
       --pattern '<asset-name>'
 
@@ -158,6 +180,8 @@ Use the operating system and architecture to select the artifact:
 
     Linux ARM64 / AArch64       → upl-aarch64_linux.tar.gz
     Linux x86_64                → upl-x86_64_linux.tar.gz
+    Linux ARM64, musl (Alpine)  → upl-aarch64_linux_musl.tar.gz
+    Linux x86_64, musl (Alpine) → upl-x86_64_linux_musl.tar.gz
     macOS Apple Silicon         → upl-aarch64_macos.tar.gz
     macOS Intel                 → upl-x86_64_macos-intel.tar.gz
     Windows ARM64               → upl-aarch64_windows.zip
@@ -180,7 +204,8 @@ On macOS:
 
 On Windows, determine whether the system is ARM64 or x86_64 and select the corresponding ZIP.
 
-There is a single Linux artifact per architecture; the published release has no musl-specific build. On a musl-based distribution such as Alpine the glibc binary may not run — build from source (§18) rather than looking for a `_musl` asset that does not exist.
+On a musl-based distribution such as Alpine the glibc binary will not run — use
+the matching `_musl` asset, which is statically linked.
 
 ### If `gh` is unavailable
 
@@ -217,6 +242,13 @@ Nested prompts must be discovered, for example:
     ~/.upl/prompts/code/review.txt
     ~/.upl/prompts/writing/blog/create_post.upl
     ~/.upl/prompts/software/api/create_api.txt
+
+Note the asymmetry: **discovery** is recursive, but the CLI's own
+**name resolution** is not. `upl build-from-json <name> <json>` only looks for
+`~/.upl/prompts/<name>.txt` and `~/.upl/prompts/<name>.upl` — directly in that
+folder, never in subdirectories. Always pass the discovered file path to the
+CLI; only use a bare name for a prompt that sits immediately inside
+`~/.upl/prompts`.
 
 ## Mode B: user/agent-specified directory
 
@@ -298,6 +330,11 @@ Identify:
 
 The goal is to construct a valid JSON object matching the prompt's declared schema.
 
+A prompt's metadata section is everything up to the first line that is exactly
+`--`, so it can be read without parsing the whole file:
+
+    sed -n '1,/^--$/p' /path/to/prompt.txt
+
 Do not fabricate parameters that are not declared by the prompt.
 
 Do not omit a required parameter unless it has a declared default.
@@ -355,13 +392,25 @@ For a prompt file:
 
     upl build-from-json /path/to/prompt.upl /tmp/params.json
 
-For a prompt in the default UPL library, a prompt name may also be used:
+For a prompt sitting directly in the default UPL library, a bare prompt name may also be used:
 
     upl build-from-json create_a_plan /tmp/params.json
 
-When an explicit path is known, prefer the explicit path because it avoids ambiguity between prompts with the same name.
+The name form resolves ONLY as `~/.upl/prompts/<name>.txt` or
+`~/.upl/prompts/<name>.upl`; it does not search subdirectories, so a prompt in
+`~/.upl/prompts/code/review.txt` must be built through its path. Prefer the
+explicit path in all cases — it also avoids ambiguity between prompts with the
+same name in different folders.
 
-Capture stdout as the rendered prompt.
+Capture **stdout** as the rendered prompt: `upl` writes the rendered prompt to
+stdout and everything else (headers, TUI, errors) to stderr, and exits non-zero
+on failure. So:
+
+    rendered="$(upl build-from-json ./prompt.txt /tmp/params.json)" || handle the error
+
+The rendered prompt can be piped directly (there is no TUI in this mode):
+
+    upl build-from-json ./prompt.txt /tmp/params.json | claude -p
 
 Do not use the interactive commands:
 
@@ -392,6 +441,31 @@ If `upl build-from-json` fails:
 6. Retry only after correcting the underlying problem.
 
 If the prompt itself is invalid UPL, report that instead of attempting to manually render it.
+
+## Common errors and what they mean
+
+Errors are printed to stderr, prefixed with `Error:` (value-validation errors
+read `Error: validation error: …`). Parse-stage errors carry the offending line
+number and field name.
+
+| Message | Cause | Fix |
+|---|---|---|
+| `unknown parameter '<key>' in JSON (not declared in prompt)` | The JSON has a key the prompt does not declare | Remove the key (check spelling; matching is case-insensitive) |
+| `parameter '<name>' is hidden by its condition and cannot be set via JSON` | A parameter whose `exclude_condition` is truthy was supplied | Remove the key entirely (or `null`), do not change its value |
+| `parameter '<name>' is an object_shape type definition and cannot be set via JSON` | An `object_shape` was supplied as a parameter | Remove the key; supply the parameters that *reference* the shape |
+| `value for '<name>' is not one of the declared opts` | An `option_single`/`option_multi` value is not offered | Use one of the declared `opts` |
+| `parameter '<name>' expects a <type>, got <type>` | JSON type does not match the declared type | Fix the JSON value's type |
+| `No value provided for variable '<name>'` | The body references a root variable the prompt never declares | Report it as a prompt bug: such a variable CANNOT be supplied through `build-from-json` — adding the key is rejected as an unknown parameter |
+| `Variable '<name>' is not a list` | A `for` loop source resolved to a non-list value | Fix the supplied value (or report the prompt bug) |
+| `could not resolve prompt '<name>' (…)` | Bare-name form used for a prompt not directly in `~/.upl/prompts` | Pass the full file path |
+| `prompt name '<name>' does not match file base name '<base>'` | The file was renamed/copied | Restore the original file name; never rename a prompt to run it |
+| `Default for '<name>' is not one of its declared opts` | A prompt-authoring bug | Report it; do not edit the prompt unless asked |
+| `Content found after the body's '--' terminator` | A bare `--` line inside the body — or, on binaries up to `0.1.1-rc.5`, tab indentation in `params` | Report it as a prompt bug (check for tabs first) |
+| `invalid JSON: …` | The parameter file is not valid JSON | Fix the JSON file |
+
+Errors whose cause is the prompt file (not the values) are prompt bugs: report
+them with the exact message rather than editing the user's prompt or rendering
+it by hand.
 
 ---
 
@@ -456,7 +530,7 @@ Field defaults declared on an `object_shape` apply at every site that references
 
 For an `object` that declares both an object-level `def` literal and field-level defaults, the object-level literal wins per key and unmentioned fields fall back to their own defaults, recursively. A partial JSON object behaves the same way.
 
-Do not create a top-level JSON parameter for an `object_shape` merely because its shape is declared in the UPL file.
+Do not create a top-level JSON parameter for an `object_shape` merely because its shape is declared in the UPL file: supplying one is a build error (`parameter '<name>' is an object_shape type definition and cannot be set via JSON`). Only `null` is tolerated for such a key. Supply values for the parameters that *reference* the shape instead.
 
 ---
 
@@ -509,6 +583,11 @@ Do not use:
 - the interactive prompt builder
 - the prompt editor
 - keyboard-driven build history
+
+`upl build --no-input <file>` is non-interactive, but it renders with the
+declared defaults only and accepts no values, so it is not an execution path for
+this skill either. To render a prompt entirely with its defaults, pass an empty
+JSON object (`{}`) to `build-from-json` instead.
 
 The skill may inspect the filesystem and prompt source directly, but actual prompt rendering must go through:
 
@@ -641,6 +720,12 @@ The default prompt directory is:
     ~/.upl/prompts
 
 It may contain arbitrarily deep recursive subdirectories.
+
+On its first run, `upl` creates `~/.upl` and seeds it with a bundled starter
+library (`~/.upl/prompts/` with the sample prompts, plus `~/.upl/tags_db`).
+The samples are compiled into the binary, so this works offline. An existing
+`~/.upl` is never overwritten. If `~/.upl/prompts` does not exist yet, running
+any `upl` command once creates it.
 
 ---
 

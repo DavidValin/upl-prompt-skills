@@ -38,7 +38,7 @@ UPL prompts are `.txt` or `.upl` files containing typed parameters, conditionals
    - When listing or choosing prompts, inspect the prompt metadata and use its `name` and `desc` to determine what the prompt does.
    - Do not rely solely on filenames.
    - If metadata cannot be parsed safely, show the filename/path and state that metadata was unavailable.
-   - A prompt's `name` MUST equal its file's base name (a single trailing `.prompt` segment is stripped), so never rename or copy a prompt to a different base name in order to run it — the build fails with `prompt name '<name>' does not match file base name '<base>'`.
+   - A prompt's `name` MUST equal its file's base name, with a single trailing `.prompt` segment stripped, so never rename or copy a prompt to a different base name in order to run it — the build fails with `prompt name '<name>' does not match file base name '<base>'`.
 
 6. **Never guess parameter values when the user has not provided enough information.**
    - Inspect the prompt's declared parameters.
@@ -87,64 +87,62 @@ On Windows PowerShell:
     Get-Command upl -ErrorAction SilentlyContinue
 
 If `upl` is available, check its version — the version is the first line of
-the help output (there is no `--version` flag; passing one prints the help and
-exits non-zero):
+the help output:
 
-    upl --help 2>&1 | head -1
+    upl --help | head -1
 
-If it is older than `0.1.1-rc.5`, it predates parts of the UPL 1.0
-specification (the `and`/`or`/`not` combinators, the `\{{{`/`\[[[` delimiter
-escapes, dotted-path `for` sources, `label` on inline `object` option etypes,
-the option-`def`-must-be-in-`opts` rule, line-numbered parse errors). If a
-prompt that looks valid is rejected for one of those constructs, report the
-version mismatch and upgrade the binary — never rewrite the user's prompt to
-work around an old CLI.
+which prints:
 
-If it is not available, install the appropriate release artifact before continuing.
+    upl 0.1.1
+
+This skill targets UPL `0.1.1`, which implements the full UPL 1.0
+specification. If the reported version is anything else, install `0.1.1` before
+continuing — never rewrite the user's prompt to work around a CLI that rejects
+a valid construct.
+
+If it is not available, install it as described below.
 
 ## Installing the CLI
 
-The latest published release is:
+Release tag:
 
-    0.1.1-rc.5
+    0.1.1
 
 Repository:
 
     DavidValin/universal-prompt-language
 
-`0.1.1-rc.5` implements the full UPL 1.0 specification. Do not assume a newer
-release exists without checking; when in doubt:
-
-    curl -s https://api.github.com/repos/DavidValin/universal-prompt-language/releases/latest
-
-Eight assets are published per release — these are the ONLY assets. Do not
+Eleven assets are published for the release — these are the ONLY assets. Do not
 construct any other asset name or URL:
 
-    upl-x86_64_linux.tar.gz            Linux x86_64 (glibc)
-    upl-aarch64_linux.tar.gz           Linux ARM64 / AArch64 (glibc)
-    upl-x86_64_linux_musl.tar.gz       Linux x86_64 (static musl, e.g. Alpine)
-    upl-aarch64_linux_musl.tar.gz      Linux ARM64 (static musl, e.g. Alpine)
-    upl-x86_64_macos-intel.tar.gz      macOS Intel
-    upl-aarch64_macos.tar.gz           macOS Apple Silicon
-    upl-x86_64_windows.zip             Windows x86_64
-    upl-aarch64_windows.zip            Windows ARM64
+    upl-0.1.1-linux-x86_64.tar.gz         Linux x86_64 (glibc)
+    upl-0.1.1-linux-aarch64.tar.gz        Linux ARM64 / AArch64 (glibc)
+    upl-0.1.1-linux-musl-x86_64.tar.gz    Linux x86_64 (static musl, e.g. Alpine)
+    upl-0.1.1-linux-musl-aarch64.tar.gz   Linux ARM64 (static musl, e.g. Alpine)
+    upl-0.1.1-macos-aarch64.tar.gz        macOS Apple Silicon
+    upl-0.1.1-macos-x86_64.tar.gz         macOS Intel
+    upl-0.1.1-windows-x86_64.zip          Windows x86_64
+    upl-0.1.1-windows-aarch64.zip         Windows ARM64
+    upl-0.1.1-freebsd-x86_64.tar.gz       FreeBSD x86_64
+    upl-0.1.1-netbsd-x86_64.tar.gz        NetBSD x86_64
+    upl-0.1.1-openbsd-x86_64.tar.gz       OpenBSD x86_64
 
 ### Release URLs
 
 Download URLs follow the pattern:
 
-    https://github.com/DavidValin/universal-prompt-language/releases/download/0.1.1-rc.5/<asset-name>
+    https://github.com/DavidValin/universal-prompt-language/releases/download/0.1.1/<asset-name>
 
 Use the exact artifact corresponding to the current operating system and architecture, for example:
 
-    https://github.com/DavidValin/universal-prompt-language/releases/download/0.1.1-rc.5/upl-x86_64_linux.tar.gz
-    https://github.com/DavidValin/universal-prompt-language/releases/download/0.1.1-rc.5/upl-aarch64_linux.tar.gz
-    https://github.com/DavidValin/universal-prompt-language/releases/download/0.1.1-rc.5/upl-x86_64_linux_musl.tar.gz
-    https://github.com/DavidValin/universal-prompt-language/releases/download/0.1.1-rc.5/upl-aarch64_linux_musl.tar.gz
-    https://github.com/DavidValin/universal-prompt-language/releases/download/0.1.1-rc.5/upl-x86_64_macos-intel.tar.gz
-    https://github.com/DavidValin/universal-prompt-language/releases/download/0.1.1-rc.5/upl-aarch64_macos.tar.gz
-    https://github.com/DavidValin/universal-prompt-language/releases/download/0.1.1-rc.5/upl-x86_64_windows.zip
-    https://github.com/DavidValin/universal-prompt-language/releases/download/0.1.1-rc.5/upl-aarch64_windows.zip
+    https://github.com/DavidValin/universal-prompt-language/releases/download/0.1.1/upl-0.1.1-linux-x86_64.tar.gz
+    https://github.com/DavidValin/universal-prompt-language/releases/download/0.1.1/upl-0.1.1-linux-aarch64.tar.gz
+    https://github.com/DavidValin/universal-prompt-language/releases/download/0.1.1/upl-0.1.1-linux-musl-x86_64.tar.gz
+    https://github.com/DavidValin/universal-prompt-language/releases/download/0.1.1/upl-0.1.1-linux-musl-aarch64.tar.gz
+    https://github.com/DavidValin/universal-prompt-language/releases/download/0.1.1/upl-0.1.1-macos-aarch64.tar.gz
+    https://github.com/DavidValin/universal-prompt-language/releases/download/0.1.1/upl-0.1.1-macos-x86_64.tar.gz
+    https://github.com/DavidValin/universal-prompt-language/releases/download/0.1.1/upl-0.1.1-windows-x86_64.zip
+    https://github.com/DavidValin/universal-prompt-language/releases/download/0.1.1/upl-0.1.1-windows-aarch64.zip
 
 ### Preferred installation method when GitHub CLI is available
 
@@ -154,7 +152,7 @@ Check for GitHub CLI:
 
 If available, download the matching release asset:
 
-    gh release download 0.1.1-rc.5 \
+    gh release download 0.1.1 \
       --repo DavidValin/universal-prompt-language \
       --pattern '<asset-name>'
 
@@ -164,30 +162,40 @@ Extract `.tar.gz` archives with:
 
 Extract the Windows ZIP using the normal ZIP extraction facilities.
 
-After extraction, locate the `upl` executable and put it on `PATH`.
+Every archive unpacks into a folder named after the asset, containing the
+executable and a copy of the specification:
+
+    upl-0.1.1-linux-x86_64/
+      upl
+      upl-spec/upl-1.0-rfc.pdf
+
+Put the `upl` executable on `PATH`.
 
 For Linux/macOS, for example:
 
-    sudo install -m 0755 upl /usr/local/bin/upl
+    sudo install -m 0755 upl-0.1.1-linux-x86_64/upl /usr/local/bin/upl
 
 Then verify:
 
-    upl --help
+    upl --help | head -1
 
 ### Selecting the release artifact
 
 Use the operating system and architecture to select the artifact:
 
-    Linux ARM64 / AArch64       → upl-aarch64_linux.tar.gz
-    Linux x86_64                → upl-x86_64_linux.tar.gz
-    Linux ARM64, musl (Alpine)  → upl-aarch64_linux_musl.tar.gz
-    Linux x86_64, musl (Alpine) → upl-x86_64_linux_musl.tar.gz
-    macOS Apple Silicon         → upl-aarch64_macos.tar.gz
-    macOS Intel                 → upl-x86_64_macos-intel.tar.gz
-    Windows ARM64               → upl-aarch64_windows.zip
-    Windows x86_64              → upl-x86_64_windows.zip
+    Linux x86_64                → upl-0.1.1-linux-x86_64.tar.gz
+    Linux ARM64 / AArch64       → upl-0.1.1-linux-aarch64.tar.gz
+    Linux x86_64, musl (Alpine) → upl-0.1.1-linux-musl-x86_64.tar.gz
+    Linux ARM64, musl (Alpine)  → upl-0.1.1-linux-musl-aarch64.tar.gz
+    macOS Apple Silicon         → upl-0.1.1-macos-aarch64.tar.gz
+    macOS Intel                 → upl-0.1.1-macos-x86_64.tar.gz
+    Windows x86_64              → upl-0.1.1-windows-x86_64.zip
+    Windows ARM64               → upl-0.1.1-windows-aarch64.zip
+    FreeBSD x86_64              → upl-0.1.1-freebsd-x86_64.tar.gz
+    NetBSD x86_64               → upl-0.1.1-netbsd-x86_64.tar.gz
+    OpenBSD x86_64              → upl-0.1.1-openbsd-x86_64.tar.gz
 
-On Linux/macOS, determine the architecture with:
+On Linux/macOS/BSD, determine the architecture with:
 
     uname -m
 
@@ -199,13 +207,13 @@ Typical values:
 
 On macOS:
 
-    arm64  → upl-aarch64_macos.tar.gz
-    x86_64 → upl-x86_64_macos-intel.tar.gz
+    arm64  → upl-0.1.1-macos-aarch64.tar.gz
+    x86_64 → upl-0.1.1-macos-x86_64.tar.gz
 
 On Windows, determine whether the system is ARM64 or x86_64 and select the corresponding ZIP.
 
 On a musl-based distribution such as Alpine the glibc binary will not run — use
-the matching `_musl` asset, which is statically linked.
+the matching `musl` asset, which is statically linked.
 
 ### If `gh` is unavailable
 
@@ -215,7 +223,7 @@ Do not invent an asset name or URL.
 
 After extracting/installing the executable, verify:
 
-    upl --help
+    upl --help | head -1
 
 If installation cannot be completed automatically because the environment does not provide a suitable download mechanism or the required permissions, tell the user exactly which artifact they need and why.
 
@@ -460,7 +468,8 @@ number and field name.
 | `could not resolve prompt '<name>' (…)` | Bare-name form used for a prompt not directly in `~/.upl/prompts` | Pass the full file path |
 | `prompt name '<name>' does not match file base name '<base>'` | The file was renamed/copied | Restore the original file name; never rename a prompt to run it |
 | `Default for '<name>' is not one of its declared opts` | A prompt-authoring bug | Report it; do not edit the prompt unless asked |
-| `Content found after the body's '--' terminator` | A bare `--` line inside the body — or, on binaries up to `0.1.1-rc.5`, tab indentation in `params` | Report it as a prompt bug (check for tabs first) |
+| `Content found after the body's '--' terminator` | A bare `--` line inside the body | Report it as a prompt bug |
+| `line <n>: tab character used for indentation (RFC §2: indentation uses spaces only)` | The metadata block is indented with tabs | Report it as a prompt bug; UPL indentation is spaces only |
 | `invalid JSON: …` | The parameter file is not valid JSON | Fix the JSON file |
 
 Errors whose cause is the prompt file (not the values) are prompt bugs: report
@@ -682,14 +691,18 @@ The exact supplied path takes precedence over prompt discovery.
 
 # 18. Installing from source
 
-If no suitable prebuilt release artifact can be used and the UPL source repository is available, the project's documented source installation is:
+If no suitable prebuilt release artifact can be used, build the `0.1.1` tag from
+source. The project's documented source installation is:
 
+    git clone https://github.com/DavidValin/universal-prompt-language
+    cd universal-prompt-language
+    git checkout 0.1.1
     make release
     sudo make install
 
 Then verify:
 
-    upl --help
+    upl --help | head -1
 
 Do not build from source unnecessarily if a suitable prebuilt release artifact is available.
 

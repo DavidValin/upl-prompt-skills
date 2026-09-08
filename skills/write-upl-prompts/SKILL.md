@@ -15,6 +15,9 @@ The authoritative specification is `upl-spec/upl-1.0-rfc.md` in the
 [universal-prompt-language](https://github.com/DavidValin/universal-prompt-language)
 repository; section references below (§2, §3.4, §5.1 …) point into it.
 
+The reference implementation is the `upl` CLI `0.1.1`; every rule, error
+message and command in this skill describes that release.
+
 When asked to create a UPL prompt, output a complete, self-contained UPL file that can be saved directly to disk and validated by a conforming UPL implementation.
 
 Do not invent UPL syntax. Follow the specification precisely.
@@ -32,7 +35,7 @@ UPL files:
   - contain only alphanumeric UTF-8 characters and `_`;
   - match the file's base name;
   - strip the `.upl`/`.txt` extension;
-  - additionally strip one trailing `.prompt` segment for legacy filenames.
+  - additionally strip one trailing `.prompt` segment (`review.prompt.txt` → `review`).
 - MUST contain a `params` metadata block.
 - MUST separate metadata from the prompt body using a line containing exactly:
   `--`
@@ -1067,10 +1070,9 @@ Parse-stage errors carry the offending line number and field name, for example:
 Read the message literally and fix the named field rather than restructuring
 the prompt.
 
-Note on tabs: released binaries up to `0.1.1-rc.5` report a tab-indented
-`params` block as `Content found after the body's '--' terminator` instead of a
-tab error. If that message appears and the body looks fine, check for tab
-indentation in the metadata section.
+Indentation is spaces only; a tab in the metadata section is reported as:
+
+    Error: line 3: tab character used for indentation (RFC §2: indentation uses spaces only): '	foo:'
 
 ---
 
@@ -1080,49 +1082,58 @@ When the user asks to validate, render, test, inspect, or otherwise use a UPL
 file and the UPL CLI is not available, install it from the official GitHub
 release artifacts.
 
-Latest published release:
+This skill targets UPL `0.1.1`, which implements the full UPL 1.0
+specification. Confirm the installed version with:
 
-    0.1.1-rc.5
+    upl --help | head -1
 
-    https://github.com/DavidValin/universal-prompt-language/releases/tag/0.1.1-rc.5
+which prints:
 
-`0.1.1-rc.5` implements the full UPL 1.0 specification (the `and`/`or`/`not`
-combinators, `\{{{`/`\[[[` escapes, dotted-path `for` sources, `label` on
-inline `object` option etypes, the option-`def`-in-`opts` rule, line-numbered
-parse errors). The only behaviour fixed after it is the tab-indentation error
-message described above. Do not assume a newer release exists without checking
-the releases page; check with:
+    upl 0.1.1
 
-    curl -s https://api.github.com/repos/DavidValin/universal-prompt-language/releases/latest
+Release tag:
 
-Eight assets are published per release — do not construct any other asset name
-or URL:
+    0.1.1
 
-    upl-x86_64_linux.tar.gz            Linux x86_64 (glibc)
-    upl-aarch64_linux.tar.gz           Linux ARM64 / AArch64 (glibc)
-    upl-x86_64_linux_musl.tar.gz       Linux x86_64 (static musl, e.g. Alpine)
-    upl-aarch64_linux_musl.tar.gz      Linux ARM64 (static musl, e.g. Alpine)
-    upl-x86_64_macos-intel.tar.gz      macOS Intel
-    upl-aarch64_macos.tar.gz           macOS Apple Silicon
-    upl-x86_64_windows.zip             Windows x86_64
-    upl-aarch64_windows.zip            Windows ARM64
+    https://github.com/DavidValin/universal-prompt-language/releases/tag/0.1.1
+
+Eleven assets are published for the release — do not construct any other asset
+name or URL:
+
+    upl-0.1.1-linux-x86_64.tar.gz         Linux x86_64 (glibc)
+    upl-0.1.1-linux-aarch64.tar.gz        Linux ARM64 / AArch64 (glibc)
+    upl-0.1.1-linux-musl-x86_64.tar.gz    Linux x86_64 (static musl, e.g. Alpine)
+    upl-0.1.1-linux-musl-aarch64.tar.gz   Linux ARM64 (static musl, e.g. Alpine)
+    upl-0.1.1-macos-aarch64.tar.gz        macOS Apple Silicon
+    upl-0.1.1-macos-x86_64.tar.gz         macOS Intel
+    upl-0.1.1-windows-x86_64.zip          Windows x86_64
+    upl-0.1.1-windows-aarch64.zip         Windows ARM64
+    upl-0.1.1-freebsd-x86_64.tar.gz       FreeBSD x86_64
+    upl-0.1.1-netbsd-x86_64.tar.gz        NetBSD x86_64
+    upl-0.1.1-openbsd-x86_64.tar.gz       OpenBSD x86_64
 
 Download URLs follow the pattern:
 
-    https://github.com/DavidValin/universal-prompt-language/releases/download/0.1.1-rc.5/<asset-name>
+    https://github.com/DavidValin/universal-prompt-language/releases/download/0.1.1/<asset-name>
 
 for example:
 
-    https://github.com/DavidValin/universal-prompt-language/releases/download/0.1.1-rc.5/upl-x86_64_linux.tar.gz
-    https://github.com/DavidValin/universal-prompt-language/releases/download/0.1.1-rc.5/upl-aarch64_macos.tar.gz
-    https://github.com/DavidValin/universal-prompt-language/releases/download/0.1.1-rc.5/upl-x86_64_windows.zip
+    https://github.com/DavidValin/universal-prompt-language/releases/download/0.1.1/upl-0.1.1-linux-x86_64.tar.gz
+    https://github.com/DavidValin/universal-prompt-language/releases/download/0.1.1/upl-0.1.1-macos-aarch64.tar.gz
+    https://github.com/DavidValin/universal-prompt-language/releases/download/0.1.1/upl-0.1.1-windows-x86_64.zip
 
 With the GitHub CLI available, prefer:
 
-    gh release download 0.1.1-rc.5 \
+    gh release download 0.1.1 \
       --repo DavidValin/universal-prompt-language \
       --pattern '<asset-name>'
 
+Every archive unpacks into a folder named after the asset, containing the
+executable and a copy of the specification:
+
+    upl-0.1.1-linux-x86_64/
+      upl
+      upl-spec/upl-1.0-rfc.pdf
 
 ---
 
@@ -1139,7 +1150,7 @@ When giving installation instructions:
 7. Make it executable on Unix-like systems if necessary.
 8. Verify installation with:
 
-    upl --help
+    upl --help | head -1
 
 If the user does not know their architecture, give commands to determine it.
 
@@ -1155,21 +1166,21 @@ Typical results:
     aarch64
 
 Two Linux artifacts are published per architecture: a glibc build
-(`upl-<arch>_linux.tar.gz`) and a static musl build
-(`upl-<arch>_linux_musl.tar.gz`). Use the musl asset on a musl-based
+(`upl-0.1.1-linux-<arch>.tar.gz`) and a static musl build
+(`upl-0.1.1-linux-musl-<arch>.tar.gz`). Use the musl asset on a musl-based
 distribution such as Alpine, where the glibc binary will not run.
 
 After extracting:
 
-    chmod +x upl
+    chmod +x upl-0.1.1-linux-x86_64/upl
 
 Then install system-wide, for example:
 
-    sudo install upl /usr/local/bin/upl
+    sudo install -m 0755 upl-0.1.1-linux-x86_64/upl /usr/local/bin/upl
 
 Verify:
 
-    upl --help
+    upl --help | head -1
 
 ### macOS
 
@@ -1184,17 +1195,17 @@ Typical results:
 
 Use:
 
-- `upl-aarch64_macos.tar.gz` for Apple Silicon.
-- `upl-x86_64_macos-intel.tar.gz` for Intel Macs.
+- `upl-0.1.1-macos-aarch64.tar.gz` for Apple Silicon.
+- `upl-0.1.1-macos-x86_64.tar.gz` for Intel Macs.
 
 After extracting:
 
-    chmod +x upl
-    sudo install upl /usr/local/bin/upl
+    chmod +x upl-0.1.1-macos-aarch64/upl
+    sudo install -m 0755 upl-0.1.1-macos-aarch64/upl /usr/local/bin/upl
 
 Verify:
 
-    upl --help
+    upl --help | head -1
 
 If macOS Gatekeeper prevents execution, explain that the downloaded executable may need to be approved in macOS security settings or cleared with the appropriate local security procedure.
 
@@ -1202,8 +1213,8 @@ If macOS Gatekeeper prevents execution, explain that the downloaded executable m
 
 Use:
 
-- `upl-aarch64_windows.zip` for ARM64 Windows.
-- `upl-x86_64_windows.zip` for x86_64 Windows.
+- `upl-0.1.1-windows-x86_64.zip` for x86_64 Windows.
+- `upl-0.1.1-windows-aarch64.zip` for ARM64 Windows.
 
 Extract the ZIP and place the directory containing `upl.exe` somewhere stable, for example:
 
@@ -1227,20 +1238,27 @@ or:
 
 Do not claim a command is available unless it has actually been verified in the user's environment.
 
+### BSD
+
+FreeBSD, NetBSD and OpenBSD x86_64 builds are published as
+`upl-0.1.1-<os>-x86_64.tar.gz`. Install them the same way as the Linux builds.
+
 ---
 
 ## Installing from Source
 
-If no prebuilt artifact suits the platform, or the very latest fixes are
-needed, build from the repository. The project's documented source installation
-is:
+If no prebuilt artifact suits the platform, build the `0.1.1` tag from source.
+The project's documented source installation is:
 
+    git clone https://github.com/DavidValin/universal-prompt-language
+    cd universal-prompt-language
+    git checkout 0.1.1
     make release
     sudo make install
 
 Then verify:
 
-    upl --help
+    upl --help | head -1
 
 Do not build from source when a suitable prebuilt release artifact would do.
 
